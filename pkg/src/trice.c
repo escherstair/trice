@@ -11,10 +11,10 @@ uint8_t  TriceCycle = 0xc0; //!< TriceCycle is increased and transmitted with ea
 #endif
 
 #ifdef TRICE_HALF_BUFFER_SIZE
-static uint32_t triceBuffer[2][TRICE_HALF_BUFFER_SIZE>>2] = {0}; //!< triceBuffer is a double buffer for better write speed.
+static uint16_t triceBuffer[2][TRICE_HALF_BUFFER_SIZE>>1] = {0}; //!< triceBuffer is a double buffer for better write speed.
 static int triceSwap = 0; //!< triceSwap is the index of the active write buffer. !triceSwap is the active read buffer index.
-    uint32_t* TriceBufferWritePosition = &triceBuffer[0][TRICE_DATA_OFFSET>>2]; //!< TriceBufferWritePosition is the active write position.
-static uint32_t* triceBufferWriteLimit = &triceBuffer[1][TRICE_DATA_OFFSET>>2]; //!< triceBufferWriteLimit is the triceBuffer written limit. 
+       uint16_t* TriceBufferWritePosition = &triceBuffer[0][TRICE_DATA_OFFSET>>1]; //!< TriceBufferWritePosition is the active write position.
+static uint16_t* triceBufferWriteLimit    = &triceBuffer[1][TRICE_DATA_OFFSET>>1]; //!< triceBufferWriteLimit is the triceBuffer written limit. 
 
 #if defined( TRICE_UART ) && defined( TRICE_HALF_BUFFER_SIZE ) // buffered out to UART
 static int triceNonBlockingWrite( void const * buf, int nByte );
@@ -22,7 +22,7 @@ static int triceNonBlockingWrite( void const * buf, int nByte );
 #endif
 
 //! triceBufferSwap swaps the trice double buffer and returns the read buffer address.
-static uint32_t* triceBufferSwap( void ){
+static uint16_t* triceBufferSwap( void ){
     TRICE_ENTER_CRITICAL_SECTION
     triceBufferWriteLimit = TriceBufferWritePosition; // keep end position
     triceSwap = !triceSwap; // exchange the 2 buffers
@@ -34,8 +34,8 @@ static uint32_t* triceBufferSwap( void ){
 //! triceDepth returns the total trice byte count ready for transfer.
 //! The trice data start at tb + TRICE_DATA_OFFSET.
 //! The returned depth is without the TRICE_DATA_OFFSET offset.
-static size_t triceDepth( uint32_t* tb ){
-    size_t depth = (triceBufferWriteLimit - tb)<<2; // 32-bit write width
+static size_t triceDepth( uint16_t* tb ){
+    size_t depth = (triceBufferWriteLimit - tb)<<1; // 16-bit write width
     return depth - TRICE_DATA_OFFSET;
 }
 
@@ -43,7 +43,7 @@ static size_t triceDepth( uint32_t* tb ){
 //! It is the resposibility of the app to call this function once every 10-100 milliseconds.
 void TriceTransfer( void ){
     if( 0 == TriceOutDepth() ){ // transmission done, so a swap is possible
-        uint32_t* tb = triceBufferSwap(); 
+        uint16_t* tb = triceBufferSwap(); 
         size_t tLen = triceDepth(tb); // tlen is always a multiple of 4
         if( tLen ){
             TriceOut( tb, tLen );
@@ -53,7 +53,7 @@ void TriceTransfer( void ){
 
 //! TriceDepthMax returns the max trice buffer depth until now.
 size_t TriceDepthMax( void ){
-    size_t currentDepth = 4*(TriceBufferWritePosition - &triceBuffer[triceSwap][0]); 
+    size_t currentDepth = 2*(TriceBufferWritePosition - &triceBuffer[triceSwap][0]); 
     return currentDepth > triceDepthMax ? currentDepth : triceDepthMax;
 }
 #else // #ifdef TRICE_HALF_BUFFER_SIZE
@@ -70,20 +70,20 @@ size_t TriceDepthMax( void ){
 //! at the tb start is for in-buffer COBS encoding and the
 //! TRICE_COBS_PACKAGE_MODE in front of the trice data.
 //! \param tLen is length of trice data. tlen is always a multiple of 4 and counts after TRICE_COBS_PACKAGE_MODE.
-void TriceOut( uint32_t* tb, size_t tLen ){
+void TriceOut( uint16_t* tb, size_t tLen ){
     size_t eLen, cLen;
     uint8_t* co = (uint8_t*)tb; // encoded COBS data starting address
-    uint32_t* da = tb + (TRICE_DATA_OFFSET>>2)-1; // start of unencoded COBS package data: descriptor and trice data
+    uint16_t* da = tb + (TRICE_DATA_OFFSET>>1)-1; // start of unencoded COBS package data: descriptor and trice data
     *da = TRICE_COBS_PACKAGE_MODE; // add a 32-bit COBS package mode descriptor in front of trice data. That allowes to inject third-party non-trice COBS packages.
     eLen = tLen + 4; // add COBS package mode descriptor length 
     #ifdef TRICE_ENCRYPT
-    eLen = (eLen + 4) & ~7; // only multiple of 8 encryptable
-    TriceEncrypt( da, eLen>>2 );
+    eLen = (eLen + 8) & ~7; // only multiple of 8 encryptable
+    TriceEncrypt( da, eLen>>1 );
     #endif
     cLen = TriceCOBSEncode(co, (uint8_t*)da, eLen);
-    do{                 // Add 1 to 4 zeroes as COBS package delimiter.
+    //do{                 // Add 1 to 4 zeroes as COBS package delimiter.
         co[cLen++] = 0; // One is ok, but padding to an uint32_t border could make TRICE_WRITE faster.
-    }while( cLen & 3 ); // Additional empty packages are ignored on th receiver side.
+    //}while( cLen & 3 ); // Additional empty packages are ignored on th receiver side.
     TRICE_WRITE( co, cLen );
     tLen += TRICE_DATA_OFFSET; 
     triceDepthMax = tLen < triceDepthMax ? triceDepthMax : tLen; // diagnostics

@@ -21,7 +21,8 @@ int64_t DoubleToInt64( double f ){
     return -(int64_t)-f;
 }
 
-#include "TCOBS.h"
+/*
+#include "tcobs.h"
 
 typedef struct{
     int ilen;
@@ -75,18 +76,21 @@ void TCOBSCheck( void ){
         }
     }
 }
+*/
 
 //! TriceCheckSet writes out all types of trices with fixed values for testing
 //! \details One trice has one subtrace, if param size max 2 bytes. 
 //! Traces with more bytes as parameter consist of several subtraces.
 void TriceCheckSet(int index) {
+#if 0
     char* s;
     uint32_t len;
     float  x = 1089.6082763671875;// 0x44883377
     double y = 518.0547492508867;// 0x4080307020601050
+#endif
     switch (index) {
         case 0:
-            TCOBSCheck();
+            //TCOBSCheck();
         break;
         case 10:
             TRICE( Id(59034), "att:Various single arguments\n" );
@@ -118,6 +122,7 @@ void TriceCheckSet(int index) {
             TRICE( Id(37423), "rd:TRICE line %x (%%x)\n", -4 );
             TRICE( Id(53816), "rd:TRICE line %d (%%d)\n", -5 );
         break;
+#if 0
         case 40:
             s = "AAAAAAAAAAAA";
             len = strlen(s);
@@ -983,6 +988,7 @@ EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
         TRICE0 (Id( 48705), "--------------------------------------------------\n" );
 #endif
         break;
+#endif				
         default:
         break;
     }
