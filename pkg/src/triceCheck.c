@@ -51,7 +51,6 @@ TCOBSTestDataSet TCOBSTestData[] = {
 
 #define TCOBS_TESTDATASET_COUNT (sizeof(TCOBSTestData) / sizeof(TCOBSTestDataSet) )
 
-
 int equal( uint8_t* expBuf, int expLen, uint8_t* actBuf, int actLen ){
     int result = 1;
     if( expLen != actLen){
