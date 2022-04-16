@@ -48,12 +48,12 @@ uint32_t ReadUs32( void );
 #define TRICE_STACK_BUFFER_MAX_SIZE 128 //!< This  minus TRICE_DATA_OFFSET the max allowed single trice size. Usually ~40 is enough.
 #ifndef TRICE_ENTER
 #define TRICE_ENTER { /*! Start of TRICE macro */ \
-    uint16_t co[TRICE_STACK_BUFFER_MAX_SIZE>>1]; /* Check TriceDepthMax at runtime. */ \
-    uint16_t* TriceBufferWritePosition = co + (TRICE_DATA_OFFSET>>1);
+    uint16_t co[TRICE_STACK_BUFFER_MAX_SIZE>>2]; /* Check TriceDepthMax at runtime. */ \
+    uint16_t* TriceBufferWritePosition = co + (TRICE_DATA_OFFSET>>2);
 #endif
 #ifndef TRICE_LEAVE
 #define TRICE_LEAVE { /*! End of TRICE macro */ \
-    unsigned tLen = ((TriceBufferWritePosition - co)<<1) - TRICE_DATA_OFFSET; \
+    unsigned tLen = ((TriceBufferWritePosition - co)<<2) - TRICE_DATA_OFFSET; \
     TriceOut( co, tLen ); } }
 #endif
 #endif // #if TRICE_MODE == 0

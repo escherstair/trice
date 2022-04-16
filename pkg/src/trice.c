@@ -74,8 +74,8 @@ size_t TriceDepthMax( void ){
 void TriceOut( uint16_t* tb, size_t tLen ){
     size_t eLen, cLen;
     uint8_t* co = (uint8_t*)tb; // encoded COBS data starting address
-    uint16_t* da = tb + (TRICE_DATA_OFFSET>>1)-1; // start of unencoded COBS package data: descriptor and trice data
-    *da = TRICE_COBS_PACKAGE_MODE; // add a 32-bit COBS package mode descriptor in front of trice data. That allowes to inject third-party non-trice COBS packages.
+    uint16_t* da = tb + (TRICE_DATA_OFFSET>>1)-2; // start of unencoded COBS package data: descriptor and trice data
+    *(uint32_t*)da = TRICE_COBS_PACKAGE_MODE; // add a 32-bit COBS package mode descriptor in front of trice data. That allowes to inject third-party non-trice COBS packages.
     eLen = tLen + 4; // add COBS package mode descriptor length 
     #ifdef TRICE_ENCRYPT
     eLen = (eLen + 8) & ~7; // only multiple of 8 encryptable
