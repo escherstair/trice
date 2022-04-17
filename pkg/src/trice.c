@@ -4,7 +4,6 @@
 #include "trice_test.h"
 #include "tcobs.h"
 #include "trice.h"
-#define TRICE_FILE Id(56030)
 
 static unsigned triceDepthMax = 0; //!< triceDepthMax is a diagnostics value usable to optimize buffer size.
 

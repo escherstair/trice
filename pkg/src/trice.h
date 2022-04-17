@@ -131,10 +131,6 @@ extern uint8_t TriceCycle;
 #define TRICE_PUT64(x) TRICE_PUT32( (uint32_t)(x) ); TRICE_PUT32( (uint32_t)((uint64_t)(x)>>32) );
 #endif
 
-#ifndef TRICE_PUTBUFFER
-#define TRICE_PUTBUFFER( buf, len ) do{ memcpy( TriceBufferWritePosition, buf, len ); TriceBufferWritePosition += (len+1)>>1; }while(0) //! TRICE_PUTBUFFER copies a buffer into the TRICE buffer.
-#endif
-
 ///////////////////////////////////////////////////////////////////////////////
 // trice time measurement (STM32 only?)
 //
@@ -200,7 +196,7 @@ void TriceInitXteaTable(void);
 #endif // #ifdef TRICE_ENCRYPT
 //
 ///////////////////////////////////////////////////////////////////////////////
-#if 0
+
 ///////////////////////////////////////////////////////////////////////////////
 // Variadic macros (https://github.com/pfultz2/Cloak/wiki/C-Preprocessor-tricks,-tips,-and-idioms)
 // This is extendable until a 1000 bytes payload.
@@ -238,7 +234,6 @@ void TriceInitXteaTable(void);
 
 //
 ///////////////////////////////////////////////////////////////////////////////
-#endif
 
 /* pre C99
 // aFloat returns passed float value x as bit pattern in a uint32_t type.
@@ -286,38 +281,36 @@ static inline uint64_t aDouble( double x ){
 
 #define TRICE_0  TRICE0  //!< Only the format string without parameter values.
 
-#ifndef TRICE_INTO
-#define TRICE_INTO TRICE_ENTER; // TRICE_PUT_PREFIX;
+#ifdef TRICE_INTO
+#error
 #endif
+
+#define ID(n) do{ uint32_t ts = 0x11111111; TRICE_PUT16(0xC000 | (n)); TRICE_PUT32(ts); } while(0)
+#define Id(n) do{ uint16_t ts =     0x1111; TRICE_PUT16(0x8000 | (n)); TRICE_PUT16(ts); } while(0)
+#define id(n) do{                           TRICE_PUT16(0x4000 | (n));                  } while(0)
+#define  N(n) do{ TRICE_PUT16( ((n)<<8) | TRICE_CYCLE ); }while(0)
+#define NC(n) do{ TRICE_PUT16( (0x8000 | (n)) ); TRICE_CYCLE }while(0) // increment TRICE_CYCLE but do not transmit it
 
 #ifndef TRICE_N
 //! TRICE_N writes id and buffer of size len.
 //! \param id trice identifier
 //! \param pFmt formatstring for trice (ignored here but used by the trice tool), could contain any add on information. The trice tool "sees" the "TRICE_N" and can handle that.
-//! \param dynString 0-terminated runtime generated string
-//! After the 4 byte trice message header are following 4 bytes coding n (only 2 used) and the buffer
-//! transfer format: 
-//! idH    idL    len    cycle <- trice header
-//! n0     n1     n2     n3    <- payload count without paddings bytes (transmittable len)
-//! c0     c1     c2     c3    <- buffer
-//! ...                        <- buffer
-//! cLen-3 cLen-2 cLen-1 cLen  <- buffer ending with maybe 1-3 undetermined padding bytes
+//! \param buf runtime generated buffer
+//! \param n valid data size in buf
 //
 // todo: for some reason this macro is not working well wit name len instead of len_, probably when injected len as value.
 //
 #define TRICE_N( id, pFmt, buf, n) do { \
     uint32_t limit = TRICE_SINGLE_MAX_SIZE-TRICE_PREFIX_SIZE-8; /* 8 = head + len size */ \
-    uint32_t len_ = n; /* n could be a constant */ \
-    if( len_ > limit ){ \
-        TRICE32( Id(61732), "wrn:Transmit buffer truncated from %u to %u\n", len_, limit ); \
-        len_ = limit; \
+    uint32_t len = n; /* n could be a constant */ \
+    if( len > limit ){ \
+        TRICE32( Id(61732), "wrn:Transmit buffer truncated from %u to %u\n", len, limit ); \
+        len = limit; \
     } \
-    TRICE_INTO \
-    TRICE_PUT32( id | (0xff00 & ((len_+7)<<6)) | TRICE_CYCLE ); /* +3 for padding, +4 for the buf size value transmitted in the payload to get the last 2 bits. */ \
-    TRICE_PUT32( len_ ); /* len as byte does not contain the exact buf len anymore, so transmit it to the host */ \
-    /* len is needed for non string buffers because the last 2 bits not stored in head. */ \
-    /* All trices know the data length but not TRICE8P. len byte values 0xFC, xFD, xFE, xFF are reserved for future extensions. */ \
-    TRICE_PUTBUFFER( buf, len_ ); \
+    TRICE_ENTER; id; \
+    if( len < 128 ){ N(len); }else{ NC(len); } } \
+    memcpy( TriceBufferWritePosition, buf, len ); \
+    TriceBufferWritePosition += (len+1)>>1; \
     TRICE_LEAVE \
 } while(0)
 #endif // #ifndef TRICE_N
@@ -333,28 +326,21 @@ static inline uint64_t aDouble( double x ){
 } while(0)
 #endif // #ifndef TRICE_S
 
-//#define Id(n) ((uint32_t)n<<16) //!< Id() is a 16 bit id 0-65535 as upper 2 bytes in head
-
-#define ID(n) do{ uint32_t ts = 0x11111111; TRICE_PUT16(0xC000 | (n)); TRICE_PUT32(ts); } while(0)
-#define Id(n) do{ uint16_t ts =     0x1111; TRICE_PUT16(0x8000 | (n)); TRICE_PUT16(ts); } while(0)
-#define id(n) do{                           TRICE_PUT16(0x4000 | (n));                  } while(0)
-#define  N(n) do{ TRICE_PUT16( ((n)<<8) | TRICE_CYCLE ); }while(0)
-
 //! TRICE0 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 #define TRICE0( id, pFmt ) \
     TRICE_ENTER; id; N(0); \
     TRICE_LEAVE
 
-#define TRICE_BYTE0(v)((uint8_t)(v))
-#define TRICE_BYTE1(v)((uint16_t)(v)<< 8)
+#define TRICE_BYTEL(v)((uint8_t)(v))
+#define TRICE_BYTEH(v)((uint16_t)(v)<< 8)
 
 //! TRICE8_1 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 a 8 bit bit value
 #define TRICE8_1( id, pFmt, v0 ) \
     TRICE_ENTER; id; N(1); \
-    TRICE_PUT16(                  TRICE_BYTE0(v0)); \
+    TRICE_PUT16( TRICE_BYTEL(v0)); \
     TRICE_LEAVE
 
 //! TRICE8_2 writes trice data as fast as possible in a buffer.
@@ -362,111 +348,119 @@ static inline uint64_t aDouble( double x ){
 //! \param v0 - v1 are 8 bit bit values
 #define TRICE8_2( id, pFmt, v0, v1 ) \
     TRICE_ENTER; id; N(2); \
-    TRICE_PUT16(TRICE_BYTE1(v1) | TRICE_BYTE0(v0)); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
     TRICE_LEAVE
-#if 0
+
 //! TRICE8_3 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v2 are 8 bit bit values
 #define TRICE8_3( id, pFmt, v0, v1, v2 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0100 | TRICE_CYCLE ); \
-    TRICE_PUT32(                  TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
+    TRICE_ENTER; id; N(3); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v3) \
     TRICE_LEAVE
 
 //! TRICE8_4 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v3 are 8 bit bit values
 #define TRICE8_4( id, pFmt, v0, v1, v2, v3 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0100 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
+    TRICE_ENTER; id; N(4); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
     TRICE_LEAVE
 
 //! TRICE8_5 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v4 are 8 bit bit values
 #define TRICE8_5( id, pFmt, v0, v1, v2, v3, v4 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0200 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32(                                                    TRICE_BYTE0(v4)); \
+    TRICE_ENTER; id; N(5); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) \
     TRICE_LEAVE
 
 //! TRICE8_6 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v5 are 8 bit bit values
 #define TRICE8_6( id, pFmt, v0, v1, v2, v3, v4, v5 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0200 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32(                                   TRICE_BYTE1(v5) |TRICE_BYTE0(v4)); \
+    TRICE_ENTER; id; N(6); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) | TRICE_BYTEH(v5)); \
     TRICE_LEAVE
 
 //! TRICE8_8 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v6 are 8 bit bit values
 #define TRICE8_7( id, pFmt, v0, v1, v2, v3, v4, v5, v6 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0200 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32(                  TRICE_BYTE2(v6) |TRICE_BYTE1(v5) |TRICE_BYTE0(v4)); \
+    TRICE_ENTER; id; N(7); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) | TRICE_BYTEH(v5)); \
+    TRICE_PUT16(TRICE_BYTEL(v6) \
     TRICE_LEAVE
 
 //! TRICE8_8 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v7 are 8 bit bit values
 #define TRICE8_8( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0200 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32( TRICE_BYTE3(v7) |TRICE_BYTE2(v6) |TRICE_BYTE1(v5) |TRICE_BYTE0(v4)); \
+    TRICE_ENTER; id; N(8); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) | TRICE_BYTEH(v5)); \
+    TRICE_PUT16(TRICE_BYTEL(v6) | TRICE_BYTEH(v7)); \
     TRICE_LEAVE
 
 //! TRICE8_8 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v7 are 8 bit bit values
 #define TRICE8_9( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0300 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32( TRICE_BYTE3(v7) |TRICE_BYTE2(v6) |TRICE_BYTE1(v5) |TRICE_BYTE0(v4)); \
-    TRICE_PUT32(                                                    TRICE_BYTE0(v8)); \
+    TRICE_ENTER; id; N(9); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) | TRICE_BYTEH(v5)); \
+    TRICE_PUT16(TRICE_BYTEL(v6) | TRICE_BYTEH(v7)); \
+    TRICE_PUT16(TRICE_BYTEL(v8) \
     TRICE_LEAVE
 
 //! TRICE8_8 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v7 are 8 bit bit values
 #define TRICE8_10( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0300 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32( TRICE_BYTE3(v7) |TRICE_BYTE2(v6) |TRICE_BYTE1(v5) |TRICE_BYTE0(v4)); \
-    TRICE_PUT32(                                   TRICE_BYTE1(v9) |TRICE_BYTE0(v8)); \
+    TRICE_ENTER; id; N(10); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) | TRICE_BYTEH(v5)); \
+    TRICE_PUT16(TRICE_BYTEL(v6) | TRICE_BYTEH(v7)); \
+    TRICE_PUT16(TRICE_BYTEL(v8) | TRICE_BYTEH(v9)); \
     TRICE_LEAVE
 
 //! TRICE8_8 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v7 are 8 bit bit values
 #define TRICE8_11( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0300 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32( TRICE_BYTE3(v7) |TRICE_BYTE2(v6) |TRICE_BYTE1(v5) |TRICE_BYTE0(v4)); \
-    TRICE_PUT32(                  TRICE_BYTE2(v10)|TRICE_BYTE1(v9) |TRICE_BYTE0(v8)); \
+   TRICE_ENTER; id; N(11); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) | TRICE_BYTEH(v5)); \
+    TRICE_PUT16(TRICE_BYTEL(v6) | TRICE_BYTEH(v7)); \
+    TRICE_PUT16(TRICE_BYTEL(v8) | TRICE_BYTEH(v9)); \
+    TRICE_PUT16(TRICE_BYTEL(v10) \
     TRICE_LEAVE
 
 //! TRICE8_12 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v11 are 8 bit bit values
 #define TRICE8_12( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0300 | TRICE_CYCLE ); \
-    TRICE_PUT32( TRICE_BYTE3(v3) |TRICE_BYTE2(v2) |TRICE_BYTE1(v1) |TRICE_BYTE0(v0)); \
-    TRICE_PUT32( TRICE_BYTE3(v7) |TRICE_BYTE2(v6) |TRICE_BYTE1(v5) |TRICE_BYTE0(v4)); \
-    TRICE_PUT32( TRICE_BYTE3(v11)|TRICE_BYTE2(v10)|TRICE_BYTE1(v9) |TRICE_BYTE0(v8)); \
+    TRICE_ENTER; id; N(12); \
+    TRICE_PUT16(TRICE_BYTEL(v0) | TRICE_BYTEH(v1)); \
+    TRICE_PUT16(TRICE_BYTEL(v2) | TRICE_BYTEH(v3)); \
+    TRICE_PUT16(TRICE_BYTEL(v4) | TRICE_BYTEH(v5)); \
+    TRICE_PUT16(TRICE_BYTEL(v6) | TRICE_BYTEH(v7)); \
+    TRICE_PUT16(TRICE_BYTEL(v8) | TRICE_BYTEH(v9)); \
+    TRICE_PUT16(TRICE_BYTEL(v10) | TRICE_BYTEH(v11)); \
     TRICE_LEAVE
-#endif
+
 //! TRICE16_1 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 a 16 bit value
@@ -481,129 +475,154 @@ static inline uint64_t aDouble( double x ){
 #define TRICE16_2( id, pFmt, v0, v1 ) \
     TRICE_ENTER; id; N(4); \
     TRICE_PUT16( (uint16_t)(v0) ); \
-    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
     TRICE_LEAVE
-#if 0
+
 //! TRICE16_3 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v2 are 16 bit values
 #define TRICE16_3( id, pFmt, v0, v1, v2 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0200 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32( (uint16_t)(v2) ); \
+    TRICE_ENTER; id; N(6); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
     TRICE_LEAVE
 
 //! TRICE16_4 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v3 are 16 bit values
 #define TRICE16_4( id, pFmt, v0, v1, v2, v3 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0200 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
+    TRICE_ENTER; id; N(8); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
     TRICE_LEAVE
 
 //! TRICE16_5 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v4 are 16 bit values
 #define TRICE16_5( id, pFmt, v0, v1, v2, v3, v4 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0300 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) ); \
+    TRICE_ENTER; id; N(10); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
     TRICE_LEAVE
 
 //! TRICE16_6 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v5 are 16 bit values
 #define TRICE16_6( id, pFmt, v0, v1, v2, v3, v4, v5 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0300 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) | ((uint32_t)(v5)<<16) ); \
+    TRICE_ENTER; id; N(12); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
+    TRICE_PUT16( (uint16_t)(v5) ); \
     TRICE_LEAVE
 
 //! TRICE16_7 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v6 are 16 bit values
 #define TRICE16_7( id, pFmt, v0, v1, v2, v3, v4, v5, v6 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0400 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) | ((uint32_t)(v5)<<16) ); \
-    TRICE_PUT32((uint16_t)(v6) ); \
+    TRICE_ENTER; id; N(14); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
+    TRICE_PUT16( (uint16_t)(v5) ); \
+    TRICE_PUT16( (uint16_t)(v6) ); \
     TRICE_LEAVE
 
 //! TRICE16_8 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v7 are 16 bit values
 #define TRICE16_8( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0400 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) | ((uint32_t)(v5)<<16) ); \
-    TRICE_PUT32((uint16_t)(v6) | ((uint32_t)(v7)<<16) ); \
+    TRICE_ENTER; id; N(16); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
+    TRICE_PUT16( (uint16_t)(v5) ); \
+    TRICE_PUT16( (uint16_t)(v6) ); \
+    TRICE_PUT16( (uint16_t)(v7) ); \
     TRICE_LEAVE
     
 //! TRICE16_9 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v8 are 16 bit values
 #define TRICE16_9( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0500 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) | ((uint32_t)(v5)<<16) ); \
-    TRICE_PUT32((uint16_t)(v6) | ((uint32_t)(v7)<<16) ); \
-    TRICE_PUT32((uint16_t)(v8) ); \
+    TRICE_ENTER; id; N(18); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
+    TRICE_PUT16( (uint16_t)(v5) ); \
+    TRICE_PUT16( (uint16_t)(v6) ); \
+    TRICE_PUT16( (uint16_t)(v7) ); \
+    TRICE_PUT16( (uint16_t)(v8) ); \
     TRICE_LEAVE
 
 //! TRICE16_10 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v9 are 16 bit values
 #define TRICE16_10( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0500 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) | ((uint32_t)(v5)<<16) ); \
-    TRICE_PUT32((uint16_t)(v6) | ((uint32_t)(v7)<<16) ); \
-    TRICE_PUT32((uint16_t)(v8) | ((uint32_t)(v9)<<16) ); \
+    TRICE_ENTER; id; N(20); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
+    TRICE_PUT16( (uint16_t)(v5) ); \
+    TRICE_PUT16( (uint16_t)(v6) ); \
+    TRICE_PUT16( (uint16_t)(v7) ); \
+    TRICE_PUT16( (uint16_t)(v8) ); \
+    TRICE_PUT16( (uint16_t)(v9) ); \
     TRICE_LEAVE
-    
+
 //! TRICE16_11 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v10 are 16 bit values
 #define TRICE16_11( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0600 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) | ((uint32_t)(v5)<<16) ); \
-    TRICE_PUT32((uint16_t)(v6) | ((uint32_t)(v7)<<16) ); \
-    TRICE_PUT32((uint16_t)(v8) | ((uint32_t)(v9)<<16) ); \
-    TRICE_PUT32((uint16_t)(v10) ); \
+    TRICE_ENTER; id; N(22); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
+    TRICE_PUT16( (uint16_t)(v5) ); \
+    TRICE_PUT16( (uint16_t)(v6) ); \
+    TRICE_PUT16( (uint16_t)(v7) ); \
+    TRICE_PUT16( (uint16_t)(v8) ); \
+    TRICE_PUT16( (uint16_t)(v9) ); \
+    TRICE_PUT16( (uint16_t)(v10) ); \
     TRICE_LEAVE
     
 //! TRICE16_12 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v11 are 16 bit values
 #define TRICE16_12( id, pFmt, v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0600 | TRICE_CYCLE ); \
-    TRICE_PUT32((uint16_t)(v0) | ((uint32_t)(v1)<<16) ); \
-    TRICE_PUT32((uint16_t)(v2) | ((uint32_t)(v3)<<16) ); \
-    TRICE_PUT32((uint16_t)(v4) | ((uint32_t)(v5)<<16) ); \
-    TRICE_PUT32((uint16_t)(v6) | ((uint32_t)(v7)<<16) ); \
-    TRICE_PUT32((uint16_t)(v8) | ((uint32_t)(v9)<<16) ); \
-    TRICE_PUT32((uint16_t)(v10)| ((uint32_t)(v11)<<16) ); \
+    TRICE_ENTER; id; N(24); \
+    TRICE_PUT16( (uint16_t)(v0) ); \
+    TRICE_PUT16( (uint16_t)(v1) ); \
+    TRICE_PUT16( (uint16_t)(v2) ); \
+    TRICE_PUT16( (uint16_t)(v3) ); \
+    TRICE_PUT16( (uint16_t)(v4) ); \
+    TRICE_PUT16( (uint16_t)(v5) ); \
+    TRICE_PUT16( (uint16_t)(v6) ); \
+    TRICE_PUT16( (uint16_t)(v7) ); \
+    TRICE_PUT16( (uint16_t)(v8) ); \
+    TRICE_PUT16( (uint16_t)(v9) ); \
+    TRICE_PUT16( (uint16_t)(v10) ); \
+    TRICE_PUT16( (uint16_t)(v11) ); \
     TRICE_LEAVE
-#endif
+
 
 //! TRICE32_1 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
@@ -613,13 +632,11 @@ static inline uint64_t aDouble( double x ){
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_LEAVE
 
-#if 0
 //! TRICE32_2 writes trice data as fast as possible in a buffer.
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v1 are 32 bit values
 #define TRICE32_2( id, pFmt, v0, v1 ) \
-    TRICE_INTO \
-    TRICE_PUT32(id | 0x0200 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(8); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_LEAVE
@@ -628,8 +645,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v2 are 32 bit values
 #define TRICE32_3( id, pFmt, v0, v1, v2 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0300 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(12); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -639,8 +655,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v3 are 32 bit values
 #define TRICE32_4( id, pFmt, v0, v1, v2, v3 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0400 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(16); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -651,8 +666,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v4 are 32 bit values
 #define TRICE32_5( id, pFmt,  v0, v1, v2, v3, v4 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0500 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(20); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -664,8 +678,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v5 are 32 bit values
 #define TRICE32_6( id, pFmt,  v0, v1, v2, v3, v4, v5 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0600 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(24); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -678,8 +691,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v6 are 32 bit values
 #define TRICE32_7( id, pFmt,  v0, v1, v2, v3, v4, v5, v6 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0700 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(28); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -693,8 +705,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v7 are 32 bit values
 #define TRICE32_8( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0800 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(32); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -709,8 +720,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v8 are 32 bit values
 #define TRICE32_9( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0900 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(36); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -726,8 +736,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - 9 are 32 bit values
 #define TRICE32_10( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0a00 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(40); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -744,8 +753,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v10 are 32 bit values
 #define TRICE32_11( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0b00 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(44); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -763,8 +771,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v11 are 32 bit values
 #define TRICE32_12( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0c00 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(48); \
     TRICE_PUT32( (uint32_t)(v0) ); \
     TRICE_PUT32( (uint32_t)(v1) ); \
     TRICE_PUT32( (uint32_t)(v2) ); \
@@ -783,8 +790,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 is a 64 bit values
 #define TRICE64_1( id, pFmt, v0 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0200 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(8); \
     TRICE_PUT64( v0 ); \
     TRICE_LEAVE
 
@@ -792,8 +798,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v1 are 64 bit values
 #define TRICE64_2( id, pFmt, v0, v1 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0400 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(16); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_LEAVE
@@ -802,8 +807,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v2 are 64 bit values
 #define TRICE64_3( id, pFmt, v0, v1, v2 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0600 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(3*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -814,8 +818,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v3 are 64 bit values
 #define TRICE64_4( id, pFmt, v0, v1, v2, v3 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0800 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(4*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -826,8 +829,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v4 are 64 bit values
 #define TRICE64_5( id, pFmt,  v0, v1, v2, v3, v4 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0a00 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(5*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -839,8 +841,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v5 are 64 bit values
 #define TRICE64_6( id, pFmt,  v0, v1, v2, v3, v4, v5 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0c00 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(6*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -853,8 +854,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v6 are 64 bit values
 #define TRICE64_7( id, pFmt,  v0, v1, v2, v3, v4, v5, v6 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x0e00 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(7*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -868,8 +868,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v7 are 64 bit values
 #define TRICE64_8( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x1000 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(8*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -884,8 +883,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v8 are 64 bit values
 #define TRICE64_9( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x1200 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(9*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -901,8 +899,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v9 are 64 bit values
 #define TRICE64_10( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8, v9 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x1400 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(10*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -919,8 +916,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v10 are 64 bit values
 #define TRICE64_11( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x1600 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(11*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -938,8 +934,7 @@ static inline uint64_t aDouble( double x ){
 //! \param id is a 16 bit Trice id in upper 2 bytes of a 32 bit value
 //! \param v0 - v11 are 64 bit values
 #define TRICE64_12( id, pFmt,  v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 ) \
-    TRICE_INTO \
-    TRICE_PUT32( id | 0x1800 | TRICE_CYCLE ); \
+    TRICE_ENTER; id; N(12*8); \
     TRICE_PUT64( v0 ); \
     TRICE_PUT64( v1 ); \
     TRICE_PUT64( v2 ); \
@@ -953,7 +948,7 @@ static inline uint64_t aDouble( double x ){
     TRICE_PUT64( v10 ); \
     TRICE_PUT64( v11 ); \
     TRICE_LEAVE
-#endif
+
 
 #ifdef __cplusplus
 }

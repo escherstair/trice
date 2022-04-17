@@ -19,11 +19,12 @@ size_t TCOBSEncode( void * restrict output, const void * restrict input, size_t 
 
 //! TCOBSDecode decodes data ending at the location pointed to by "input" backwards 
 //! and writes the output to the location pointed to by "output" with a maximum size of max.
-//! Returns the number of bytes written to "output". If the returned value is equal max, 
-//! this is an error "output buffer too small". The decoded data start at output+max-returned.
+//! Returns the number of bytes written to "output". Only max bytes are written. If the returned value is
+//! > max, this is an error "output buffer too small". 
+//! THIS IS IMPORTANT: The decoded data start at output+max-returned, because output is filled from the end.
 //! Buffer overlapping is partially possible if output is behind input but data can get much longer.
 //! Remove the "restrict" qualifiers if compiling with a pre-C99 C dialect.
-unsigned TCOBSDecode( uint8_t* restrict output, unsigned max, const uint8_t * restrict input );
+size_t TCOBSDecode( void * restrict output, size_t max, const void * restrict input );
 
 #ifdef __cplusplus
 }
