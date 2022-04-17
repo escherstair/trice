@@ -2,6 +2,7 @@
 \author Thomas.Hoehenleitner [at] seerose.net
 *******************************************************************************/
 #include "trice_test.h"
+#include "tcobs.h"
 #include "trice.h"
 #define TRICE_FILE Id(56030)
 
@@ -86,28 +87,48 @@ size_t triceDataLen( size_t len, uint16_t* da ){
     return n;
 }
 
-#define FRAMING 0
+#ifdef TRICE_CGO_TEST
+int triceFraming = 0;
+#endif
 
 //! TriceTrasferEncode converts src buffer with len bytes into dest buffer for transfer and returns byte count in dest.
-size_t TriceTransferEncode( uint8_t* dest, void* src, size_t len){
+size_t TriceTransferEncode( void * restrict dest, const void * restrict src, size_t len){
+    uint8_t* dst = dest;
     #ifdef TRICE_ENCRYPT
     len = (len + 8) & ~7; // only multiple of 8 encryptable
     TriceEncrypt( src, len ); // in-place encryption
     #endif
+    #ifdef TRICE_CGO_TEST
+    switch( triceFraming ){
+        default:
+        case 0:
+            memcpy(dest, src, len );
+            return len;
+        case 1:
+            len = TriceCOBSEncode(dest, src, len);
+            dst[len] = 0; // add delimiter byte
+            return len+1;
+        case 2:
+            len = TCOBSEncode(dest, src, len);
+            dst[len] = 0; // add delimiter byte
+            return len+1;
+    }
+    #else // #ifdef TRICE_CGO_TEST
     #if FRAMING == 0 // no framing
         memcpy(dest, src, len );
         return len;
     #endif
     #if FRAMING == 1 // COBS
         len = TriceCOBSEncode(dest, src, len);
-        dest[len] = 0; // add delimiter byte
+        dst[len] = 0; // add delimiter byte
         return len+1
     #endif
     #if FRAMING == 2 // TCOBS
         len = TCOBSEncode(dest, src, len);
-        dest[len] = 0; // add delimiter byte
+        dst[len] = 0; // add delimiter byte
         return len+1
     #endif
+    #endif // #else // #ifdef TRICE_CGO_TEST
 }
 
 //! TriceOut converts trice data and transmits them to the output.
@@ -183,33 +204,35 @@ void triceTriggerTransmit(void){
 //! Returns the number of bytes written to "output".
 //! Remove the "restrict" qualifiers if compiling with a pre-C99 C dialect.
 //! (copied and adapted from https://github.com/jacquesf/COBS-Consistent-Overhead-Byte-Stuffing/blob/master/cobs.c)
-unsigned TriceCOBSEncode( uint8_t* restrict output, const uint8_t * restrict input, unsigned length){
+size_t TriceCOBSEncode( void * restrict output, const void * restrict input, size_t length){
     unsigned read_index = 0;
     unsigned write_index = 1;
     unsigned code_index = 0;
+    uint8_t* out = output;
+    const uint8_t* in = input;
     uint8_t code = 1;
     while(read_index < length)
     {
-        if(input[read_index] == 0)
+        if(in[read_index] == 0)
         {
-            output[code_index] = code;
+            out[code_index] = code;
             code = 1;
             code_index = write_index++;
             read_index++;
         }
         else
         {
-            output[write_index++] = input[read_index++];
+            out[write_index++] = in[read_index++];
             code++;
             if(code == 0xFF)
             {
-                output[code_index] = code;
+                out[code_index] = code;
                 code = 1;
                 code_index = write_index++;
             }
         }
     }
-    output[code_index] = code;
+    out[code_index] = code;
     return write_index;
 }
 

@@ -28,8 +28,8 @@ extern "C" {
 
 size_t TriceDepthMax( void );
 extern uint16_t* TriceBufferWritePosition;
-unsigned TriceCOBSEncode( uint8_t* restrict output, const uint8_t * restrict input, unsigned length);
-unsigned TCOBSEncode( uint8_t* restrict output, const uint8_t * restrict input, unsigned length);
+size_t TriceCOBSEncode( void * restrict output, const void * restrict input, size_t length);
+//unsigned TCOBSEncode( uint8_t* restrict output, const uint8_t * restrict input, unsigned length);
 void TriceOut( uint16_t* tb, size_t tLen );
 void TriceTransfer( void );
 void TriceCheckSet( int index ); //!< tests

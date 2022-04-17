@@ -18,7 +18,13 @@ func setTriceBuffer(o []byte) {
 	C.SetTriceBuffer(Cout)
 }
 
-// triceCode performs trice code sequence n. It returns the actual byte stream length.
+// setTriceFraming tells the underlying C code the trice byte stream framing method.
+// 0 = none, 1 = COBS, 2 = TCOBS
+func setTriceFraming(n int) {
+	C.SetTriceFraming(C.int(n))
+}
+
+// triceCodeNoFraming performs trice code sequence n. It returns the actual byte stream length.
 // It is simply a Go wrapper.
 func triceCode(n int) int {
 	return int(C.TriceCode(C.int(n)))
