@@ -27,7 +27,7 @@ static uint16_t* triceBufferSwap( void ){
     TRICE_ENTER_CRITICAL_SECTION
     triceBufferWriteLimit = TriceBufferWritePosition; // keep end position
     triceSwap = !triceSwap; // exchange the 2 buffers
-    TriceBufferWritePosition = &triceBuffer[triceSwap][TRICE_DATA_OFFSET>>2]; // set write position for next TRICE
+    TriceBufferWritePosition = &triceBuffer[triceSwap][TRICE_DATA_OFFSET>>1]; // set write position for next TRICE
     TRICE_LEAVE_CRITICAL_SECTION
     return &triceBuffer[!triceSwap][0];
 }
@@ -66,28 +66,62 @@ size_t TriceDepthMax( void ){
 
 #endif // #else #ifdef TRICE_HALF_BUFFER_SIZE
 
-//! TriceOut converts trice data and transmits them to the output.
-//! \param tb is start of uint32_t* trice buffer. The space TRICE_DATA_OFFSET>>2
-//! at the tb start is for in-buffer COBS encoding and the
-//! TRICE_COBS_PACKAGE_MODE in front of the trice data.
-//! \param tLen is length of trice data. tlen is always a multiple of 4 and counts after TRICE_COBS_PACKAGE_MODE.
-void TriceOut( uint16_t* tb, size_t tLen ){
-    size_t eLen, cLen;
-    uint8_t* co = (uint8_t*)tb; // encoded COBS data starting address
-    uint16_t* da = tb + (TRICE_DATA_OFFSET>>1)-2; // start of unencoded COBS package data: descriptor and trice data
-    *(uint32_t*)da = TRICE_COBS_PACKAGE_MODE; // add a 32-bit COBS package mode descriptor in front of trice data. That allowes to inject third-party non-trice COBS packages.
-    eLen = tLen + 4; // add COBS package mode descriptor length 
+#define ASSERT( f ) while( !(f) );
+
+//! triceDataLen returns len or if possible a smaller value for len.
+// *da = 11iiiiiiI TT TT NC ...
+// *da = 10iiiiiiI TT NC ...
+// *da = 01iiiiiiI NC ...
+// *da = 00...
+size_t triceDataLen( size_t len, uint16_t* da ){
+    uint16_t x = *da >> 14; // get the 2 descriptor bits
+    if( x == 0 ){
+        return len; // unknown data structure, use len
+    }
+    uint16_t nc = da[x];
+    size_t n = nc>>8;
+    n = n < 128 ? n : 0x7f & nc;
+    n = n + 4 + 2 * (x-1); // add ID, NC and TT
+    //ASSERT( n <= len )
+    return n;
+}
+
+#define FRAMING 0
+
+//! TriceTrasferEncode converts src buffer with len bytes into dest buffer for transfer and returns byte count in dest.
+size_t TriceTransferEncode( uint8_t* dest, void* src, size_t len){
     #ifdef TRICE_ENCRYPT
-    eLen = (eLen + 8) & ~7; // only multiple of 8 encryptable
-    TriceEncrypt( da, eLen>>1 );
+    len = (len + 8) & ~7; // only multiple of 8 encryptable
+    TriceEncrypt( src, len ); // in-place encryption
     #endif
-    cLen = TriceCOBSEncode(co, (uint8_t*)da, eLen);
-    //do{                 // Add 1 to 4 zeroes as COBS package delimiter.
-        co[cLen++] = 0; // One is ok, but padding to an uint32_t border could make TRICE_WRITE faster.
-    //}while( cLen & 3 ); // Additional empty packages are ignored on th receiver side.
-    TRICE_WRITE( co, cLen );
-    tLen += TRICE_DATA_OFFSET; 
-    triceDepthMax = tLen < triceDepthMax ? triceDepthMax : tLen; // diagnostics
+    #if FRAMING == 0 // no framing
+        memcpy(dest, src, len );
+        return len;
+    #endif
+    #if FRAMING == 1 // COBS
+        len = TriceCOBSEncode(dest, src, len);
+        dest[len] = 0; // add delimiter byte
+        return len+1
+    #endif
+    #if FRAMING == 2 // TCOBS
+        len = TCOBSEncode(dest, src, len);
+        dest[len] = 0; // add delimiter byte
+        return len+1
+    #endif
+}
+
+//! TriceOut converts trice data and transmits them to the output.
+//! \param tb is start of uint16_t* trice buffer. The trice data start at offset TRICE_DATA_OFFSET>>1 allowing an
+//! in-buffer transfer encoding.
+//! \param tLen is length of trice data. tlen is always a multiple of 2 and may include a padding byte.
+void TriceOut( uint16_t* tb, size_t len ){
+    uint8_t* co = (uint8_t*)tb; // encoded COBS data starting address
+    uint16_t* da = tb + (TRICE_DATA_OFFSET>>1); // start of unencoded trice data
+    len = triceDataLen( len, da );
+    len = TriceTransferEncode(co, da, len);
+    TRICE_WRITE( co, len );
+    len += TRICE_DATA_OFFSET; // diagnostics
+    triceDepthMax = len < triceDepthMax ? triceDepthMax : len; // diagnostics
 }
 
 #if defined( TRICE_UART ) && !defined( TRICE_HALF_BUFFER_SIZE ) // direct out to UART
