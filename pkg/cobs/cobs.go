@@ -8,15 +8,14 @@ package cobs
 import "C"
 import (
 	"errors"
-	"fmt"
 	"unsafe"
 )
 
-// Encode encodes `i` into `o` and returns number of bytes in `o`.
+// CEncode encodes `i` into `o` and returns number of bytes in `o`.
 // For details see https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing.
 // The Encode implementation is done in C because the aimed use case is an embedded device running C.
 // This function is mainly for testing.
-func Encode(o, i []byte) (n int) {
+func CEncode(o, i []byte) (n int) {
 	if len(i) == 0 {
 		return
 	}
@@ -26,17 +25,18 @@ func Encode(o, i []byte) (n int) {
 	return
 }
 
-// decodeCOBS expects in slice rd a byte sequence ending with a 0, writes the COBS decoded data to wr and returns len(wr).
-//
-// If rd contains more bytes after the first 0 byte, these are ignored.
-// Needs to be written in a better way.
-func decodeCOBS(wr, rd []byte) int {
-	n, e := Decode(wr, rd)
-	if e == nil {
-		return n
+// CDecode decodes `i` into `o` and returns number of bytes in `o`.
+// For details see https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing.
+// The CDencode implementation is done in C because the aimed use case is an embedded device running C.
+// This function is mainly for testing.
+func CDecode(o, i []byte) (n int, _ error) {
+	if len(i) == 0 {
+		return
 	}
-	fmt.Println(e)
-	return 0
+	in := unsafe.Pointer(&i[0])
+	out := unsafe.Pointer(&o[0])
+	n = int(C.COBSDecode(out, in, C.size_t(len(i))))
+	return
 }
 
 // Decode a COBS frame to a slice of bytes.
@@ -60,3 +60,7 @@ func Decode(dec, cobs []byte) (n int, e error) {
 	}
 	return
 }
+
+//  func Encode(o, i []byte) (n int) {
+//  todo
+//  }
