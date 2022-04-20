@@ -198,9 +198,11 @@ func Translate(w io.Writer, sw *emitter.TriceLineComposer, lut id.TriceIDLookUp,
 	case "COBS":
 		dec = newCOBSDecoder(w, lut, m, rc, endian)
 		//cobsVariantDecode = cobs.Decode
-	//  case "COBSFF":
-	//  	dec = newCOBSDecoder(w, lut, m, rc, endian)
-	//  	cobsVariantDecode = cobsFFDecode
+		//  case "COBSFF":
+		//  	dec = newCOBSDecoder(w, lut, m, rc, endian)
+		//  	cobsVariantDecode = cobsFFDecode
+	case "TREX":
+		dec = newTREXDecoder(w, lut, m, rc, endian)
 	case "CHAR":
 		dec = newCHARDecoder(w, lut, m, rc, endian)
 	case "DUMP":
